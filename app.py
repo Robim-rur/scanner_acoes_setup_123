@@ -20,6 +20,54 @@ ativos = [
 
 def ema(series, period):
 return series.ewm(span=period, adjust=False).mean()
+# ===============================
+# FUNÇÃO SETUP 123 + INSIDE BAR
+# ===============================
+def setup_123_inside(df_d, df_w):
+
+    if len(df_d) < 80 or len(df_w) < 80:
+        return None
+
+    # EMA 69
+    df_d["EMA69"] = ta.ema(df_d["Close"], length=69)
+    df_w["EMA69"] = ta.ema(df_w["Close"], length=69)
+
+    # Confirmação de tendência
+    if df_d["Close"].iloc[-1] < df_d["EMA69"].iloc[-1]:
+        return None
+    if df_w["Close"].iloc[-1] < df_w["EMA69"].iloc[-1]:
+        return None
+
+    # Procurar padrão nos últimos 20 candles
+    for i in range(-20, -2):
+
+        c1 = df_d.iloc[i - 2]
+        c2 = df_d.iloc[i - 1]
+        c3 = df_d.iloc[i]
+
+        # ===== SETUP 123 CLÁSSICO =====
+        if (
+            c2["Low"] < c1["Low"] and
+            c3["Low"] > c2["Low"]
+        ):
+            return {
+                "Padrão": "123 Clássico",
+                "Entrada": round(c3["High"], 2),
+                "Stop": round(c2["Low"], 2)
+            }
+
+        # ===== INSIDE BAR =====
+        if (
+            c3["High"] <= c2["High"] and
+            c3["Low"] >= c2["Low"]
+        ):
+            return {
+                "Padrão": "Inside Bar",
+                "Entrada": round(c2["High"], 2),
+                "Stop": round(c2["Low"], 2)
+            }
+
+    return None
 
 
 
