@@ -27,7 +27,7 @@ st.write("""
 # =====================================================
 # LISTA COMPLETA DE ATIVOS (173)
 # =====================================================
-ativos = []
+ativos = [
     # AÇÕES
     "PETR4.SA","VALE3.SA","ITUB4.SA","BBDC4.SA","BBAS3.SA","ABEV3.SA","JBSS3.SA","ELET3.SA","WEGE3.SA","RENT3.SA",
     "ITSA4.SA","HAPV3.SA","GGBR4.SA","SUZB3.SA","B3SA3.SA","MGLU3.SA","LREN3.SA","EQTL3.SA","CSAN3.SA","RDOR3.SA",
@@ -49,7 +49,7 @@ ativos = []
     "ALZR11.SA","GGRC11.SA",
 
     # BDRs
-    "AAPL34.SA","AMZO34.SA","GOGL34.SA","MSFT34.SA",
+    "AAPL34.SA","AMZO34.SA","GOGL34.SA","MSFT34.SA",]
 # =========================================================
 # EXECUÇÃO DO SCANNER
 # =========================================================
