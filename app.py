@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-import pandas-ta as ta
+import pandas_ta as ta
 
 # =====================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -99,16 +99,19 @@ def executar():
             period="1y",
             interval="1d",
             group_by="ticker",
-            progress=False
+            progress=False,
+            auto_adjust=True
         )
 
         for i, ativo in enumerate(ativos_scan):
             try:
-                df = dados[ativo].dropna()
-                res = procurar_setup(df)
-                if res:
-                    res["Ativo"] = ativo.replace(".SA", "")
-                    resultados.append(res)
+                # Verificação para evitar erro de ticker ausente no DataFrame retornado
+                if ativo in dados.columns.get_level_values(0):
+                    df = dados[ativo].dropna()
+                    res = procurar_setup(df)
+                    if res:
+                        res["Ativo"] = ativo.replace(".SA", "")
+                        resultados.append(res)
             except:
                 pass
 
