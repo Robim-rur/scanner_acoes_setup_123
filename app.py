@@ -7,12 +7,12 @@ import pandas_ta as ta
 # CONFIGURAÇÃO DA PÁGINA
 # =====================================================
 st.set_page_config(
-    page_title="Scanner Setup 123 + Inside Bar + Rompimento Semanal",
+    page_title="Scanner B3 - Setup Diário + Setup Semanal",
     layout="wide"
 )
 
 # =====================================================
-# LISTAS DE ATIVOS (BASE + COMPLEMENTOS)
+# LISTAS DE ATIVOS
 # =====================================================
 acoes_100 = [
     "RRRP3.SA","ALOS3.SA","ALPA4.SA","ABEV3.SA","ARZZ3.SA","ASAI3.SA","AZUL4.SA","B3SA3.SA","BBAS3.SA","BBDC3.SA",
@@ -47,25 +47,10 @@ etfs_fiis_24 = [
 ativos_scan = sorted(set(acoes_100 + bdrs_50 + etfs_fiis_24))
 
 # =====================================================
-# FUNÇÕES AUXILIARES
+# SETUP DIÁRIO - 123 / INSIDE (INALTERADO)
 # =====================================================
+def procurar_setup_diario(df):
 
-def diario_para_semanal(df):
-    df = df.copy()
-    df = df.resample("W-FRI").agg({
-        "Open": "first",
-        "High": "max",
-        "Low": "min",
-        "Close": "last",
-        "Volume": "sum"
-    }).dropna()
-    return df
-
-
-# =====================================================
-# SETUP 1 - 123 / INSIDE
-# =====================================================
-def procurar_setup_123(df):
     if df is None or len(df) < 80:
         return None
 
@@ -90,7 +75,7 @@ def procurar_setup_123(df):
 
             if preco_atual > stop and preco_atual <= entrada * 1.01:
                 return {
-                    "Setup": "123 / Inside",
+                    "Setup": "123 / Inside (Diário)",
                     "Preço": round(preco_atual, 2),
                     "Entrada": entrada,
                     "Stop": stop
@@ -100,130 +85,128 @@ def procurar_setup_123(df):
 
 
 # =====================================================
-# SETUP 2 - ROMPIMENTO SEMANAL DE TENDÊNCIA
+# SETUP SEMANAL  (ADX AJUSTADO PARA > 15)
 # =====================================================
-def procurar_setup_semanal_rompimento(df_diario):
-    if df_diario is None or len(df_diario) < 200:
-        return None
+def procurar_setup_semanal(df):
 
-    df = diario_para_semanal(df_diario)
-
-    if len(df) < 80:
+    if df is None or len(df) < 100:
         return None
 
     df["EMA69"] = ta.ema(df["Close"], length=69)
 
-    dmi = ta.dmi(df["High"], df["Low"], df["Close"], length=14)
+    adx = ta.adx(df["High"], df["Low"], df["Close"], length=14)
+    stoch = ta.stoch(df["High"], df["Low"], df["Close"], k=14, d=3, smooth_k=3)
 
-    if dmi is None or dmi.empty:
-        return None
+    df = pd.concat([df, adx, stoch], axis=1)
 
-    df = pd.concat([df, dmi], axis=1)
-
-    df["STO_K"], df["STO_D"] = ta.stoch(
-        df["High"], df["Low"], df["Close"],
-        k=14, d=3, smooth_k=3
-    )
-
-    # EMA 69 inclinada
+    # tendência pela EMA69
     if df["EMA69"].iloc[-1] <= df["EMA69"].iloc[-2]:
         return None
 
-    # DMI
-    if not (df["DMP_14"].iloc[-1] > df["DMN_14"].iloc[-1]):
+    # D+ acima do D-
+    if df["DMP_14"].iloc[-1] <= df["DMN_14"].iloc[-1]:
         return None
 
-    # ADX
-    if df["ADX_14"].iloc[-1] <= 20:
+    # >>> CORREÇÃO APLICADA AQUI
+    # ADX > 15 (antes era 20)
+    if df["ADX_14"].iloc[-1] <= 15:
         return None
 
-    # ---------- ESTOCÁSTICO MAIS PERMISSIVO ----------
-    cruzamentos = []
+    k_atual = df["STOCHk_14_3_3"].iloc[-1]
+    d_atual = df["STOCHd_14_3_3"].iloc[-1]
+    k_anterior = df["STOCHk_14_3_3"].iloc[-2]
 
-    for i in [-3, -2, -1]:
-        cruz = (
-            df["STO_K"].iloc[i-1] < df["STO_D"].iloc[i-1] and
-            df["STO_K"].iloc[i] > df["STO_D"].iloc[i]
-        )
-        cruzamentos.append(cruz)
+    # estocástico mais permissivo
+    cruzou_para_cima = k_anterior <= d_atual and k_atual > d_atual
+    abaixo_de_sobrecompra = k_atual < 80
 
-    if not any(cruzamentos):
+    if not (cruzou_para_cima and abaixo_de_sobrecompra):
         return None
 
-    if df["STO_K"].iloc[-1] <= df["STO_D"].iloc[-1]:
-        return None
-    # -------------------------------------------------
+    entrada = round(df["High"].rolling(20).max().iloc[-2], 2)
+    preco = round(df["Close"].iloc[-1], 2)
 
-    if len(df) < 21:
-        return None
+    if preco <= entrada * 1.02:
+        return {
+            "Setup": "Semanal (EMA69 + DMI + ADX>15 + Estoc.)",
+            "Preço": preco,
+            "Entrada": entrada
+        }
 
-    max_20 = df["High"].iloc[-21:-1].max()
-
-    if df["Close"].iloc[-1] <= max_20:
-        return None
-
-    entrada = round(df["Close"].iloc[-1], 2)
-    stop = round(df["Low"].iloc[-1], 2)
-
-    return {
-        "Setup": "Rompimento semanal 20",
-        "Preço": entrada,
-        "Entrada": entrada,
-        "Stop": stop
-    }
+    return None
 
 
 # =====================================================
 # EXECUÇÃO
 # =====================================================
 def executar():
-    st.title("📈 Scanner Setup 123 / Inside + Rompimento Semanal")
+
+    st.title("📈 Scanner B3 – Setup Diário + Setup Semanal")
+
     st.write(f"Ativos monitorados: **{len(ativos_scan)}**")
 
     if st.button("🔍 Escanear"):
-        resultados_123 = []
+
+        resultados_diario = []
         resultados_semanal = []
 
         progress = st.progress(0)
 
-        dados = yf.download(
+        dados_diarios = yf.download(
             ativos_scan,
-            period="2y",
+            period="1y",
             interval="1d",
             group_by="ticker",
             progress=False
         )
 
+        dados_semanais = yf.download(
+            ativos_scan,
+            period="5y",
+            interval="1wk",
+            group_by="ticker",
+            progress=False
+        )
+
         for i, ativo in enumerate(ativos_scan):
+
             try:
-                df = dados[ativo].dropna()
+                df_d = dados_diarios[ativo].dropna()
+                res_d = procurar_setup_diario(df_d)
 
-                res1 = procurar_setup_123(df)
-                if res1:
-                    res1["Ativo"] = ativo.replace(".SA", "")
-                    resultados_123.append(res1)
+                if res_d:
+                    res_d["Ativo"] = ativo.replace(".SA", "")
+                    resultados_diario.append(res_d)
 
-                res2 = procurar_setup_semanal_rompimento(df)
-                if res2:
-                    res2["Ativo"] = ativo.replace(".SA", "")
-                    resultados_semanal.append(res2)
+            except:
+                pass
+
+            try:
+                df_w = dados_semanais[ativo].dropna()
+                res_w = procurar_setup_semanal(df_w)
+
+                if res_w:
+                    res_w["Ativo"] = ativo.replace(".SA", "")
+                    resultados_semanal.append(res_w)
 
             except:
                 pass
 
             progress.progress((i + 1) / len(ativos_scan))
 
-        if resultados_123:
-            st.subheader("📌 Resultados – Setup 123 / Inside")
-            st.dataframe(pd.DataFrame(resultados_123), use_container_width=True)
+        st.subheader("📌 Setup 123 / Inside – Diário")
+
+        if resultados_diario:
+            st.dataframe(pd.DataFrame(resultados_diario), use_container_width=True)
         else:
-            st.warning("Nenhum ativo encontrado no Setup 123 / Inside.")
+            st.warning("Nenhum sinal no setup diário.")
+
+        st.subheader("📌 Setup Semanal")
 
         if resultados_semanal:
-            st.subheader("📌 Resultados – Setup Rompimento Semanal")
             st.dataframe(pd.DataFrame(resultados_semanal), use_container_width=True)
         else:
-            st.warning("Nenhum ativo encontrado no Setup Rompimento Semanal.")
+            st.warning("Nenhum sinal no setup semanal.")
 
 
 if __name__ == "__main__":
