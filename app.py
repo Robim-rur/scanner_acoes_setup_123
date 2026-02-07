@@ -7,7 +7,7 @@ import pandas_ta as ta
 # CONFIGURAÇÃO DA PÁGINA
 # =====================================================
 st.set_page_config(
-    page_title="Scanner Setup 123 + Inside Bar",
+    page_title="Scanner Setup 123 + Inside Bar + Rompimento Semanal",
     layout="wide"
 )
 
@@ -47,15 +47,30 @@ etfs_fiis_24 = [
 ativos_scan = sorted(set(acoes_100 + bdrs_50 + etfs_fiis_24))
 
 # =====================================================
-# FUNÇÃO DE SCAN
+# FUNÇÕES AUXILIARES
 # =====================================================
-def procurar_setup(df):
+
+def diario_para_semanal(df):
+    df = df.copy()
+    df = df.resample("W-FRI").agg({
+        "Open": "first",
+        "High": "max",
+        "Low": "min",
+        "Close": "last",
+        "Volume": "sum"
+    }).dropna()
+    return df
+
+
+# =====================================================
+# SETUP 1 - 123 / INSIDE (SEU SETUP ORIGINAL)
+# =====================================================
+def procurar_setup_123(df):
     if df is None or len(df) < 80:
         return None
 
     df["EMA69"] = ta.ema(df["Close"], length=69)
 
-    # Tendência = EMA 69 inclinada para cima
     if df["EMA69"].iloc[-1] <= df["EMA69"].iloc[-2]:
         return None
 
@@ -75,53 +90,132 @@ def procurar_setup(df):
 
             if preco_atual > stop and preco_atual <= entrada * 1.01:
                 return {
-                    "Status": "🔥 Gatilho" if i == -1 else "⏳ Armado",
                     "Setup": "123 / Inside",
                     "Preço": round(preco_atual, 2),
                     "Entrada": entrada,
                     "Stop": stop
                 }
+
     return None
+
+
+# =====================================================
+# SETUP 2 - ROMPIMENTO SEMANAL DE TENDÊNCIA
+# =====================================================
+def procurar_setup_semanal_rompimento(df_diario):
+    if df_diario is None or len(df_diario) < 200:
+        return None
+
+    df = diario_para_semanal(df_diario)
+
+    if len(df) < 80:
+        return None
+
+    df["EMA69"] = ta.ema(df["Close"], length=69)
+
+    dmi = ta.dmi(df["High"], df["Low"], df["Close"], length=14)
+
+    if dmi is None or dmi.empty:
+        return None
+
+    df = pd.concat([df, dmi], axis=1)
+
+    df["STO_K"], df["STO_D"] = ta.stoch(
+        df["High"], df["Low"], df["Close"],
+        k=14, d=3, smooth_k=3
+    )
+
+    if df["EMA69"].iloc[-1] <= df["EMA69"].iloc[-2]:
+        return None
+
+    if not (df["DMP_14"].iloc[-1] > df["DMN_14"].iloc[-1]):
+        return None
+
+    if df["ADX_14"].iloc[-1] <= 20:
+        return None
+
+    cruzou_estoc = (
+        df["STO_K"].iloc[-2] < df["STO_D"].iloc[-2] and
+        df["STO_K"].iloc[-1] > df["STO_D"].iloc[-1]
+    )
+
+    if not cruzou_estoc:
+        return None
+
+    if df["STO_K"].iloc[-1] > 80:
+        return None
+
+    if len(df) < 21:
+        return None
+
+    max_20 = df["High"].iloc[-21:-1].max()
+
+    if df["Close"].iloc[-1] <= max_20:
+        return None
+
+    entrada = round(df["Close"].iloc[-1], 2)
+    stop = round(df["Low"].iloc[-1], 2)
+
+    return {
+        "Setup": "Rompimento semanal 20",
+        "Preço": entrada,
+        "Entrada": entrada,
+        "Stop": stop
+    }
+
 
 # =====================================================
 # EXECUÇÃO
 # =====================================================
 def executar():
-    st.title("📈 Scanner Setup 123 + Inside Bar")
+    st.title("📈 Scanner Setup 123 / Inside + Rompimento Semanal")
     st.write(f"Ativos monitorados: **{len(ativos_scan)}**")
 
     if st.button("🔍 Escanear"):
-        resultados = []
+        resultados_123 = []
+        resultados_semanal = []
+
         progress = st.progress(0)
 
         dados = yf.download(
             ativos_scan,
-            period="1y",
+            period="2y",
             interval="1d",
             group_by="ticker",
-            progress=False,
-            auto_adjust=True
+            progress=False
         )
 
         for i, ativo in enumerate(ativos_scan):
             try:
-                # Verificação para evitar erro de ticker ausente no DataFrame retornado
-                if ativo in dados.columns.get_level_values(0):
-                    df = dados[ativo].dropna()
-                    res = procurar_setup(df)
-                    if res:
-                        res["Ativo"] = ativo.replace(".SA", "")
-                        resultados.append(res)
+                df = dados[ativo].dropna()
+
+                res1 = procurar_setup_123(df)
+                if res1:
+                    res1["Ativo"] = ativo.replace(".SA", "")
+                    resultados_123.append(res1)
+
+                res2 = procurar_setup_semanal_rompimento(df)
+                if res2:
+                    res2["Ativo"] = ativo.replace(".SA", "")
+                    resultados_semanal.append(res2)
+
             except:
                 pass
 
             progress.progress((i + 1) / len(ativos_scan))
 
-        if resultados:
-            df_final = pd.DataFrame(resultados)
-            st.dataframe(df_final, use_container_width=True)
+        if resultados_123:
+            st.subheader("📌 Resultados – Setup 123 / Inside")
+            st.dataframe(pd.DataFrame(resultados_123), use_container_width=True)
         else:
-            st.warning("Nenhum setup encontrado.")
+            st.warning("Nenhum ativo encontrado no Setup 123 / Inside.")
+
+        if resultados_semanal:
+            st.subheader("📌 Resultados – Setup Rompimento Semanal")
+            st.dataframe(pd.DataFrame(resultados_semanal), use_container_width=True)
+        else:
+            st.warning("Nenhum ativo encontrado no Setup Rompimento Semanal.")
+
 
 if __name__ == "__main__":
     executar()
