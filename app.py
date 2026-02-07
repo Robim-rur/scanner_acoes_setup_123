@@ -63,7 +63,7 @@ def diario_para_semanal(df):
 
 
 # =====================================================
-# SETUP 1 - 123 / INSIDE (SEU SETUP ORIGINAL)
+# SETUP 1 - 123 / INSIDE
 # =====================================================
 def procurar_setup_123(df):
     if df is None or len(df) < 80:
@@ -125,25 +125,34 @@ def procurar_setup_semanal_rompimento(df_diario):
         k=14, d=3, smooth_k=3
     )
 
+    # EMA 69 inclinada
     if df["EMA69"].iloc[-1] <= df["EMA69"].iloc[-2]:
         return None
 
+    # DMI
     if not (df["DMP_14"].iloc[-1] > df["DMN_14"].iloc[-1]):
         return None
 
+    # ADX
     if df["ADX_14"].iloc[-1] <= 20:
         return None
 
-    cruzou_estoc = (
-        df["STO_K"].iloc[-2] < df["STO_D"].iloc[-2] and
-        df["STO_K"].iloc[-1] > df["STO_D"].iloc[-1]
-    )
+    # ---------- ESTOCÁSTICO MAIS PERMISSIVO ----------
+    cruzamentos = []
 
-    if not cruzou_estoc:
+    for i in [-3, -2, -1]:
+        cruz = (
+            df["STO_K"].iloc[i-1] < df["STO_D"].iloc[i-1] and
+            df["STO_K"].iloc[i] > df["STO_D"].iloc[i]
+        )
+        cruzamentos.append(cruz)
+
+    if not any(cruzamentos):
         return None
 
-    if df["STO_K"].iloc[-1] > 80:
+    if df["STO_K"].iloc[-1] <= df["STO_D"].iloc[-1]:
         return None
+    # -------------------------------------------------
 
     if len(df) < 21:
         return None
