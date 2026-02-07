@@ -47,7 +47,7 @@ etfs_fiis_24 = [
 ativos_scan = sorted(set(acoes_100 + bdrs_50 + etfs_fiis_24))
 
 # =====================================================
-# SETUP DIÁRIO - 123 / INSIDE (INALTERADO)
+# SETUP DIÁRIO - 123 / INSIDE
 # =====================================================
 def procurar_setup_diario(df):
 
@@ -85,7 +85,7 @@ def procurar_setup_diario(df):
 
 
 # =====================================================
-# SETUP SEMANAL  (ADX AJUSTADO PARA > 15)
+# SETUP SEMANAL - CONFIRMAÇÃO DO DIÁRIO
 # =====================================================
 def procurar_setup_semanal(df):
 
@@ -99,16 +99,12 @@ def procurar_setup_semanal(df):
 
     df = pd.concat([df, adx, stoch], axis=1)
 
-    # tendência pela EMA69
     if df["EMA69"].iloc[-1] <= df["EMA69"].iloc[-2]:
         return None
 
-    # D+ acima do D-
     if df["DMP_14"].iloc[-1] <= df["DMN_14"].iloc[-1]:
         return None
 
-    # >>> CORREÇÃO APLICADA AQUI
-    # ADX > 15 (antes era 20)
     if df["ADX_14"].iloc[-1] <= 15:
         return None
 
@@ -116,7 +112,6 @@ def procurar_setup_semanal(df):
     d_atual = df["STOCHd_14_3_3"].iloc[-1]
     k_anterior = df["STOCHk_14_3_3"].iloc[-2]
 
-    # estocástico mais permissivo
     cruzou_para_cima = k_anterior <= d_atual and k_atual > d_atual
     abaixo_de_sobrecompra = k_atual < 80
 
@@ -128,12 +123,64 @@ def procurar_setup_semanal(df):
 
     if preco <= entrada * 1.02:
         return {
-            "Setup": "Semanal (EMA69 + DMI + ADX>15 + Estoc.)",
+            "Setup": "Semanal Confirmação (EMA69 + DMI + ADX>15 + Estoc.)",
             "Preço": preco,
             "Entrada": entrada
         }
 
     return None
+
+
+# =====================================================
+# SETUP SEMANAL - OPERACIONAL (OBV)
+# =====================================================
+def procurar_setup_semanal_obv(df):
+
+    if df is None or len(df) < 80:
+        return None
+
+    df["EMA69"] = ta.ema(df["Close"], length=69)
+
+    obv = ta.obv(df["Close"], df["Volume"])
+    df["OBV"] = obv
+    df["OBV_EMA21"] = ta.ema(df["OBV"], length=21)
+
+    # filtro de tendência
+    if df["EMA69"].iloc[-1] <= df["EMA69"].iloc[-2]:
+        return None
+
+    if df["Close"].iloc[-1] <= df["EMA69"].iloc[-1]:
+        return None
+
+    # filtro de fluxo
+    if df["OBV"].iloc[-1] <= df["OBV_EMA21"].iloc[-1]:
+        return None
+
+    # rompimento da máxima das últimas 10 semanas (anterior)
+    max_10 = df["High"].rolling(10).max().iloc[-2]
+
+    close = df["Close"].iloc[-1]
+    high = df["High"].iloc[-1]
+    low = df["Low"].iloc[-1]
+
+    if close <= max_10:
+        return None
+
+    # fechamento no mínimo na metade superior do candle
+    range_candle = high - low
+    if range_candle == 0:
+        return None
+
+    pos_fechamento = (close - low) / range_candle
+
+    if pos_fechamento < 0.5:
+        return None
+
+    return {
+        "Setup": "Semanal Operacional (OBV)",
+        "Preço": round(close, 2),
+        "Rompimento": round(max_10, 2)
+    }
 
 
 # =====================================================
@@ -149,6 +196,7 @@ def executar():
 
         resultados_diario = []
         resultados_semanal = []
+        resultados_semanal_obv = []
 
         progress = st.progress(0)
 
@@ -177,17 +225,21 @@ def executar():
                 if res_d:
                     res_d["Ativo"] = ativo.replace(".SA", "")
                     resultados_diario.append(res_d)
-
             except:
                 pass
 
             try:
                 df_w = dados_semanais[ativo].dropna()
-                res_w = procurar_setup_semanal(df_w)
 
+                res_w = procurar_setup_semanal(df_w)
                 if res_w:
                     res_w["Ativo"] = ativo.replace(".SA", "")
                     resultados_semanal.append(res_w)
+
+                res_obv = procurar_setup_semanal_obv(df_w)
+                if res_obv:
+                    res_obv["Ativo"] = ativo.replace(".SA", "")
+                    resultados_semanal_obv.append(res_obv)
 
             except:
                 pass
@@ -201,13 +253,21 @@ def executar():
         else:
             st.warning("Nenhum sinal no setup diário.")
 
-        st.subheader("📌 Setup Semanal")
+        st.subheader("📌 Setup Semanal – Confirmação do Diário")
 
         if resultados_semanal:
             st.dataframe(pd.DataFrame(resultados_semanal), use_container_width=True)
         else:
-            st.warning("Nenhum sinal no setup semanal.")
+            st.warning("Nenhum sinal no setup semanal de confirmação.")
+
+        st.subheader("📌 Setup Semanal – Operacional (OBV)")
+
+        if resultados_semanal_obv:
+            st.dataframe(pd.DataFrame(resultados_semanal_obv), use_container_width=True)
+        else:
+            st.warning("Nenhum sinal no setup semanal operacional (OBV).")
 
 
 if __name__ == "__main__":
     executar()
+
